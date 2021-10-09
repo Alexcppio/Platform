@@ -24,7 +24,8 @@ namespace Platform
             {
                 app.UseDeveloperExceptionPage();
             }
-
+            app.UseMiddleware<Population>();
+            app.UseMiddleware<Capital>();
             app.Use(async (context, next) =>
             {
                 if (context.Request.Method == HttpMethods.Get)
