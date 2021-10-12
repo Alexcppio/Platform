@@ -5,45 +5,50 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Routing;
 using Platform.Services;
+using Microsoft.Extensions.Configuration;
+using System;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace Platform
 {
     public class Startup
     {
+        public Startup(IConfiguration config)
+        {
+            Configuration = config;
+        }
+        private IConfiguration Configuration;
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddTransient<IResponseFormatter, GuidService>();
+            services.AddSingleton(typeof(ICollection<>), typeof(List<>));
         }
         public void Configure(IApplicationBuilder app, 
                               IWebHostEnvironment env)
         {
             app.UseDeveloperExceptionPage();            
             app.UseRouting();
-            app.UseMiddleware<WeatherMiddleware>();
-            
-            app.Use(async (context, next) =>
-            {
-                if (context.Request.Path == "/middleware/function")
-                {
-                    IResponseFormatter formatter
-                    = app.ApplicationServices.GetService<IResponseFormatter>();
-                    await formatter.Format(context, 
-                        "Middleware Function: It is snowing in Chicago");
-                }
-                else
-                {
-                    await next();
-                }
-            });
             app.UseEndpoints(endpoints =>
             {
-                endpoints.MapEndpoint<WeatherEndpoint>("/endpoint/class");
-                endpoints.MapGet("/endpoint/function", async context =>
+                endpoints.MapGet("/string", async context =>
                 {
-                    IResponseFormatter formatter
-                    = app.ApplicationServices.GetService<IResponseFormatter>();
-                    await formatter.Format(context,
-                    "Endpoint Function: It is sunny in LA");
+                    ICollection<string> collection
+                    = context.RequestServices.GetService<ICollection<string>>();
+                    collection.Add($"Request: {DateTime.Now.ToLongTimeString()}");
+                    foreach(string str in collection)
+                    {
+                        await context.Response.WriteAsync($"String: {str}\n");
+                    }
+                });
+                endpoints.MapGet("/int", async context =>
+                {
+                    ICollection<int> collection
+                    = context.RequestServices.GetService<ICollection<int>>();
+                    collection.Add(collection.Count() + 1);
+                    foreach(int val in collection)
+                    {
+                        await context.Response.WriteAsync($"Int: {val}\n");
+                    }
                 });
             });
         }
