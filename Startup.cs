@@ -1,80 +1,62 @@
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.AspNetCore.Routing;
-using Platform.Services;
 using Microsoft.Extensions.Configuration;
-using System;
-using System.Linq;
-using System.Collections.Generic;
-using Microsoft.Extensions.Options;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.FileProviders;
-using Microsoft.AspNetCore.Hosting;
+using Platform.Services;
+using Microsoft.EntityFrameworkCore;
+using Platform.Models;
 using Microsoft.Extensions.Hosting;
-using Microsoft.AspNetCore.HostFiltering;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Platform
 {
     public class Startup
     {
+        public Startup(IConfiguration config)
+        {
+            Configuration = config;
+        }
+        private IConfiguration Configuration { get; set; }
         public void ConfigureServices(IServiceCollection services)
         {
-            services.Configure<CookiePolicyOptions>(opts =>
+            services.AddDistributedSqlServerCache(opts =>
             {
-                opts.CheckConsentNeeded = context => true;
+                opts.ConnectionString = Configuration["ConnectionStrings:CacheConnection"];
+                opts.SchemaName = "dbo";
+                opts.TableName = "DataCache";
             });
-            services.AddDistributedMemoryCache();
-            services.AddSession(options =>
+            services.AddResponseCaching();
+            services.AddSingleton<IResponseFormatter, HtmlResponseFormatter>();
+            services.AddDbContext<CalculationContext>(opts =>
             {
-                options.IdleTimeout = TimeSpan.FromMinutes(30);
-                options.Cookie.IsEssential = true;
+                opts.UseSqlServer(Configuration["ConnectionStrings:CalcConnection"]);
             });
-            services.AddHsts(opts =>
-            {
-                opts.MaxAge = TimeSpan.FromDays(1);
-                opts.IncludeSubDomains = true;
-            });
-            services.Configure<HostFilteringOptions>(opts =>
-            {
-                opts.AllowedHosts.Clear();
-                opts.AllowedHosts.Add("*.example.com");
-            });
+            services.AddTransient<SeedData>();
         }
-        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        public void Configure(IApplicationBuilder app, IHostApplicationLifetime lifetime, IWebHostEnvironment env, SeedData seedData)
         {
-            // app.UseDeveloperExceptionPage();
-            app.UseExceptionHandler("/error.html");
-            if (env.IsProduction())
-            {
-                app.UseHsts();
-            }
-            app.UseHttpsRedirection();
-            app.UseStatusCodePages("text/html", Responses.DefaultResponse);
-            app.UseCookiePolicy();
+            app.UseDeveloperExceptionPage();
+            app.UseResponseCaching();
             app.UseStaticFiles();
-            app.UseMiddleware<ConsentMiddleware>();
-            app.UseSession();
-            app.Use( async (context, next) =>
+            app.UseRouting();
+            app.UseEndpoints(endpoints =>
             {
-                if ( context.Request.Path == "/error" )
+                endpoints.MapEndpoint<SumEndpoint>("/sum/{count:int=1000000000}");
+                endpoints.MapGet("/", async context =>
                 {
-                    context.Response.StatusCode = StatusCodes.Status404NotFound;
-                    await Task.CompletedTask;
-                }
-                else
-                {
-                    await next();
-                }
+                    await context.Response.WriteAsync("Hello World!");
+                });
             });
-            app.Run(context =>
+            bool cmdLineInit = (Configuration["INITDB"] ?? "false") == "true";
+            if(env.IsDevelopment() || cmdLineInit)
             {
-                throw new Exception("Something has gone wrong");
-                // Что-то пошло не так
-            });
+                seedData.SeedDatabase();
+                if(cmdLineInit)
+                {
+                    lifetime.StopApplication();
+                }
+            }
         }
     }
 }
+
